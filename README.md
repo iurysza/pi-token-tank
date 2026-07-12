@@ -1,65 +1,122 @@
-# pi-codex-kimi-usage
+# pi-model-quotas
 
-A Pi extension that shows the active model family's subscription quota in the footer. OpenAI/OpenAI-Codex models show Codex quota; `kimi-coding` models show Kimi quota. Unsupported providers show no quota status.
-
-## Footer
-
-The default `minimal` mode shows the 5-hour window:
+Provider-aware subscription quota status for [Pi](https://github.com/badlogic/pi-mono). It follows the active model, fetches only that provider’s quota, and keeps the footer quiet for unsupported providers.
 
 ```text
 ▰▱▱▱  24%  ↻  3:25
 ```
 
-`full` mode adds the weekly window:
+## Supported providers
+
+| Active model provider | Subscription | Authentication | Quota windows |
+| --- | --- | --- | --- |
+| `openai`, `openai-codex` | OpenAI Codex | Pi `/login openai-codex` | 5 hour, weekly |
+| `kimi-coding` | Kimi Coding | Pi `/login kimi-coding` or `KIMI_API_KEY` | 5 hour, weekly |
+
+Unsupported model providers produce no footer status.
+
+OpenCode Go is intentionally not supported yet. Its proposed API-key-authenticated usage endpoint is still unmerged upstream; current alternatives require scraping console HTML with an expiring browser cookie. Once an official endpoint ships, its 5-hour, weekly, and monthly limits can be added as a normal provider adapter.
+
+## Install
+
+```sh
+pi install git:github.com/iurysza/pi-model-quotas
+```
+
+Then authenticate the provider you use:
+
+```text
+/login openai-codex
+/login kimi-coding
+```
+
+Reload Pi after installation.
+
+## Footer modes
+
+Minimal mode is the default and shows the provider’s primary window:
+
+```text
+▰▱▱▱  24%  ↻  3:25
+```
+
+Full mode adds the configured secondary window:
 
 ```text
 5h  ▰▱▱▱  24%  ↻ 3:25   ·   7d  ▰▱▱▱  15%  ↻ Sun 9:00
 ```
 
-The four-cell gauge represents quota pressure in 25-point buckets. Percentages stay exact and alone receive threshold color: green below 70%, yellow at 70–89%, red at 90%+. A trailing `~` marks stale last-good data. Reset timestamps use local wall-clock time.
-
-## Installation
-
-```sh
-pi install git:github.com/iurysza/pi-codex-kimi-usage
-```
-
-## Prerequisites
-
-- `/login openai-codex` for Codex quota.
-- `/login kimi-coding` (or `KIMI_API_KEY`) for Kimi quota.
+- Four gauge cells represent 25-point usage buckets.
+- Only the percentage receives threshold color: green below 70%, yellow from 70–89%, red at 90% or higher.
+- `~` after a percentage means the extension is showing stale last-good data.
+- Reset timestamps use local time.
 
 ## Commands
 
-- `/quotas` — toggle the detailed widget showing both providers.
-- `/quotas minimal` — use the compact 5-hour footer.
-- `/quotas full` — show 5-hour and weekly footer windows.
+| Command | Action |
+| --- | --- |
+| `/quotas` | Toggle detailed quota data for every configured provider |
+| `/quotas minimal` | Show only the active provider’s primary window |
+| `/quotas full` | Show the active provider’s configured full window set |
 
-Footer mode defaults to `minimal` and is stored globally in `pi-codex-kimi-usage.json` under Pi's agent directory. This file contains only the display preference, never quota data or credentials.
+The selected mode is stored in `pi-model-quotas.json` under Pi’s agent directory. The file contains only `{ "footerMode": "minimal" | "full" }`—never credentials or quota data.
 
-## Refresh behavior
+## Refresh and failure behavior
 
-Quota refreshes on session start and after each turn or model switch when its cache is older than five minutes. Model switches immediately route the footer to the selected provider. Opening bare `/quotas` forces both providers to refresh.
+- Fetches the active provider on session start.
+- Refreshes after turns and model switches when cached data is older than five minutes.
+- Routes immediately when the active model changes.
+- Opening `/quotas` forces all registered providers to refresh independently.
+- Keeps last-good data and marks it stale if a later request fails.
+- Shows `—` when credentials are missing and `!` when a request fails without cached data.
 
-## Adding providers
+## Privacy
 
-Providers are registered in `src/providers.ts` through the exported `QuotaProvider` contract. An adapter supplies its ID and label, active-model matcher, quota fetcher, credential hint, and the window IDs used by minimal/full footer modes. The coordinator, cache, stale-data handling, model routing, and `/quotas` widget derive from that registry.
+- Uses direct, read-only provider quota endpoints.
+- Reuses Pi’s `AuthStorage`; no separate login flow.
+- Does not read browser cookies, scrape dashboards, probe models, or spawn subprocesses.
+- Never persists tokens, account IDs, raw responses, or quota data.
 
-Provider fetchers normalize API responses into labeled `QuotaWindow` values, so new window types such as monthly limits require no formatter changes.
+Current data sources:
 
-### OpenCode Go
+- Codex: `https://chatgpt.com/backend-api/wham/usage`
+- Kimi: `https://api.kimi.com/coding/v1/usages`
 
-OpenCode Go support is waiting for an official API-key-authenticated usage endpoint. The proposed `/zen/go/v1/usage` endpoint is not merged upstream; current alternatives require scraping console HTML with an expiring browser cookie. Once the official endpoint ships, Go can be added as one adapter with 5-hour, weekly, and monthly windows.
+These are provider-controlled surfaces and may change.
 
-## Privacy and security
+## Adding a provider
 
-- Only direct read-only quota endpoints are used.
-- No browser cookies, dashboard scraping, model probes, or subprocesses.
-- Tokens, JWTs, account IDs, raw provider responses, and quota data are never persisted by this extension.
+Providers implement the exported `QuotaProvider` contract and are registered in [`src/providers.ts`](src/providers.ts):
+
+```ts
+const provider: QuotaProvider = {
+  id: "provider-id",
+  label: "Provider",
+  matchesModel: (model) => model?.provider === "provider-id",
+  fetch: fetchProviderQuota,
+  credentialsHint: "Run /login provider-id.",
+  footerWindows: {
+    minimal: ["five-hour"],
+    full: ["five-hour", "weekly"],
+  },
+};
+```
+
+The fetcher normalizes the provider response into `ProviderQuota` and labeled `QuotaWindow` values. Registration automatically supplies model routing, independent caching, in-flight deduplication, stale-data fallback, footer rendering, and `/quotas` details. New window types such as monthly limits need no formatter changes.
+
+## Development
+
+```sh
+npm install
+npm run check
+npm test
+npm pack --dry-run
+```
+
+Tests cover response parsing, credential refresh, dynamic provider registration, cache isolation, formatting, preference persistence, and extension lifecycle behavior.
 
 ## Troubleshooting
 
-- If the footer shows `—`, log in to the active model's provider.
-- If it shows `!`, check network and credentials.
-- Full custom footers created with `ctx.ui.setFooter()` must render Pi extension statuses or they can hide this footer segment; `/quotas` still works.
-- The Codex and Kimi endpoints are internal/provider surfaces and may change.
+- `—`: authenticate the active model provider.
+- `!`: verify credentials and network access.
+- Missing footer segment with a custom footer: the custom `ctx.ui.setFooter()` implementation must render extension statuses. `/quotas` remains available.

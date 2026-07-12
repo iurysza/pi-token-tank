@@ -1,23 +1,25 @@
 {
-  "name": "pi-codex-kimi-usage",
-  "version": "0.3.0",
-  "description": "Pi footer quota status for OpenAI Codex and Kimi Coding subscriptions",
+  "name": "pi-model-quotas",
+  "version": "0.4.0",
+  "description": "Provider-neutral subscription quota status for Pi",
   "license": "MIT",
   "author": "Iury Souza",
   "keywords": [
     "pi-package",
     "pi-extension",
-    "codex",
-    "kimi",
     "quota",
-    "usage"
+    "subscription",
+    "usage",
+    "footer",
+    "codex",
+    "kimi"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iurysza/pi-codex-kimi-usage.git"
+    "url": "git+https://github.com/iurysza/pi-model-quotas.git"
   },
-  "bugs": "https://github.com/iurysza/pi-codex-kimi-usage/issues",
-  "homepage": "https://github.com/iurysza/pi-codex-kimi-usage#readme",
+  "bugs": "https://github.com/iurysza/pi-model-quotas/issues",
+  "homepage": "https://github.com/iurysza/pi-model-quotas#readme",
   "type": "module",
   "main": "src/index.ts",
   "pi": {

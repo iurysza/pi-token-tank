@@ -9,8 +9,8 @@ import { loadFooterMode, saveFooterMode, type FooterMode } from "./preferences.j
 import { providerForModel as findProviderForModel, providers } from "./providers.js";
 import type { ProviderId, ProviderQuota, QuotaProvider, QuotaSnapshot } from "./types.js";
 
-const STATUS_KEY = "pi-codex-kimi-usage";
-const WIDGET_KEY = "pi-codex-kimi-usage";
+const STATUS_KEY = "pi-model-quotas";
+const WIDGET_KEY = "pi-model-quotas";
 const FRESHNESS_MS = 5 * 60 * 1000;
 
 interface CacheEntry {
@@ -89,7 +89,7 @@ export function providerForModel(model: ExtensionContext["model"]): ProviderId |
   return findProviderForModel(model)?.id;
 }
 
-export function createPiCodexKimiUsage(
+export function createPiModelQuotas(
   pi: ExtensionAPI,
   storageOverride?: AuthStorageLike,
   preferenceFile?: string,
@@ -176,5 +176,5 @@ export { providers } from "./providers.js";
 export type { QuotaProvider } from "./types.js";
 
 export default function piCodexKimiUsage(pi: ExtensionAPI) {
-  return createPiCodexKimiUsage(pi);
+  return createPiModelQuotas(pi);
 }
