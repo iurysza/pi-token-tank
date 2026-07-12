@@ -4,7 +4,7 @@
 
 <h1 align="center">pi-token-tank</h1>
 
-<p align="center"><strong>Keep an eye on the tank.</strong></p>
+<p align="center"><strong>Your token mileage at a glance.</strong></p>
 
 Provider-aware subscription quota status for Pi. It follows the active model and fetches that provider’s quota.
 
