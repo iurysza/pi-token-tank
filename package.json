@@ -1,6 +1,6 @@
 {
   "name": "pi-codex-kimi-usage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi footer quota status for OpenAI Codex and Kimi Coding subscriptions",
   "license": "MIT",
   "author": "Iury Souza",

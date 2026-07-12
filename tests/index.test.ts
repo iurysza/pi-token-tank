@@ -1,6 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createPiCodexKimiUsage } from "../src/index.js";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { createPiCodexKimiUsage, providerForModel } from "../src/index.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AuthStorageLike } from "../src/auth.js";
 import codexUsage from "./fixtures/codex-usage.json" with { type: "json" };
@@ -28,7 +31,7 @@ function withMockFetch(fn: () => Promise<void>): () => Promise<void> {
   };
 }
 
-function fakeAPI() {
+function fakeAPI(provider = "openai-codex") {
   const handlers: Record<string, ((event: unknown, ctx: unknown) => Promise<unknown>)[]> = {};
   const status: Record<string, string | undefined> = {};
   const widgets: Record<string, string[] | undefined> = {};
@@ -36,6 +39,7 @@ function fakeAPI() {
 
   const ctx: ExtensionContext = {
     mode: "tui",
+    model: { provider, id: "test-model" } as ExtensionContext["model"],
     ui: {
       setStatus: (key: string, text: string | undefined) => {
         status[key] = text;
@@ -74,6 +78,13 @@ function fakeAPI() {
 }
 
 describe("createPiCodexKimiUsage", () => {
+  it("routes supported model families and rejects unsupported providers", () => {
+    assert.equal(providerForModel({ provider: "openai", id: "gpt" } as ExtensionContext["model"]), "codex");
+    assert.equal(providerForModel({ provider: "openai-codex", id: "gpt" } as ExtensionContext["model"]), "codex");
+    assert.equal(providerForModel({ provider: "kimi-coding", id: "kimi" } as ExtensionContext["model"]), "kimi");
+    assert.equal(providerForModel({ provider: "anthropic", id: "claude" } as ExtensionContext["model"]), undefined);
+  });
+
   it("registers /quotas and not /usage", () => {
     fakeAPI();
     const registered: string[] = [];
@@ -95,6 +106,9 @@ describe("createPiCodexKimiUsage", () => {
       createPiCodexKimiUsage(f.api, fakeStorage());
       await f.fire("session_start", { type: "session_start", reason: "startup" });
       assert.ok(f.status["pi-codex-kimi-usage"], "status should be set");
+      f.ctx.model = { provider: "anthropic", id: "claude" } as ExtensionContext["model"];
+      await f.fire("model_select", { type: "model_select", model: f.ctx.model, source: "set" });
+      assert.equal(f.status["pi-codex-kimi-usage"], undefined);
     }),
   );
 
@@ -120,6 +134,36 @@ describe("createPiCodexKimiUsage", () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+
+  it("switches provider footer immediately", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (url) => new Response(JSON.stringify(String(url).includes("chatgpt.com") ? codexUsage : kimiUsage))) as typeof fetch;
+    try {
+      const f = fakeAPI("openai-codex");
+      const storage = { ...fakeStorage(), get: (provider: string) => provider === "openai-codex"
+        ? { type: "oauth", access: "token", accountId: "acc-1" }
+        : { type: "api_key", key: "token" } } as unknown as AuthStorageLike;
+      createPiCodexKimiUsage(f.api, storage);
+      await f.fire("session_start", {});
+      const codexFooter = f.status["pi-codex-kimi-usage"];
+      f.ctx.model = { provider: "kimi-coding", id: "kimi" } as ExtensionContext["model"];
+      await f.fire("model_select", { model: f.ctx.model });
+      assert.notEqual(f.status["pi-codex-kimi-usage"], codexFooter);
+      assert.ok(f.status["pi-codex-kimi-usage"]?.includes("18"));
+    } finally { globalThis.fetch = original; }
+  });
+
+  it("changes and atomically persists footer mode", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "quota-mode-"));
+    const path = join(dir, "preference.json");
+    try {
+      const f = fakeAPI();
+      createPiCodexKimiUsage(f.api, fakeStorage(), path);
+      await f.commands.quotas!.handler("full", f.ctx);
+      assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { footerMode: "full" });
+      assert.ok(f.status["pi-codex-kimi-usage"]);
+    } finally { await rm(dir, { recursive: true, force: true }); }
   });
 
   it(

@@ -7,6 +7,7 @@ import { getAuthStorage, type AuthStorageLike } from "./auth.js";
 import { fetchCodexQuota } from "./codex.js";
 import { formatFooter, formatWidget } from "./format.js";
 import { fetchKimiQuota } from "./kimi.js";
+import { loadFooterMode, saveFooterMode, type FooterMode } from "./preferences.js";
 import type { ProviderName, ProviderQuota, QuotaSnapshot } from "./types.js";
 
 const STATUS_KEY = "pi-codex-kimi-usage";
@@ -108,9 +109,17 @@ function makeThemeLike(ctx: ExtensionContext["ui"]) {
   };
 }
 
+export function providerForModel(model: ExtensionContext["model"]): ProviderName | undefined {
+  const provider = model?.provider.toLowerCase();
+  if (provider === "openai" || provider === "openai-codex") return "codex";
+  if (provider === "kimi-coding") return "kimi";
+  return undefined;
+}
+
 export function createPiCodexKimiUsage(
   pi: ExtensionAPI,
   storageOverride?: AuthStorageLike,
+  preferenceFile?: string,
 ) {
   const storage = storageOverride ?? getAuthStorage();
   const coordinator = createCoordinator(storage, {
@@ -119,10 +128,16 @@ export function createPiCodexKimiUsage(
   });
 
   let widgetVisible = false;
+  let footerMode: FooterMode = "minimal";
 
-  async function updateFooter(ctx: ExtensionContext["ui"]) {
-    const snapshot = coordinator.getSnapshot();
-    ctx.setStatus(STATUS_KEY, formatFooter(snapshot, makeThemeLike(ctx)));
+  function updateFooter(ctx: ExtensionContext) {
+    const provider = providerForModel(ctx.model);
+    if (!provider) {
+      ctx.ui.setStatus(STATUS_KEY, undefined);
+      return;
+    }
+    const quota = coordinator.getSnapshot()[provider];
+    ctx.ui.setStatus(STATUS_KEY, formatFooter(quota, footerMode, makeThemeLike(ctx.ui)));
   }
 
   function updateWidget(ctx: ExtensionContext["ui"]) {
@@ -135,14 +150,15 @@ export function createPiCodexKimiUsage(
   }
 
   async function refreshAndRender(ctx: ExtensionContext, force: boolean) {
-    await coordinator.refreshAll(force);
-    await updateFooter(ctx.ui);
-    if (widgetVisible) {
-      updateWidget(ctx.ui);
-    }
+    const provider = providerForModel(ctx.model);
+    updateFooter(ctx);
+    if (provider) await coordinator.refresh(provider, force);
+    updateFooter(ctx);
+    if (widgetVisible) updateWidget(ctx.ui);
   }
 
   pi.on("session_start", async (_event, ctx) => {
+    footerMode = await loadFooterMode(preferenceFile);
     await refreshAndRender(ctx, true);
   });
 
@@ -150,8 +166,9 @@ export function createPiCodexKimiUsage(
     await refreshAndRender(ctx, false);
   });
 
-  pi.on("model_select", async (_event, ctx) => {
-    await refreshAndRender(ctx, false);
+  pi.on("model_select", async (event, ctx) => {
+    const selectedContext = { ...ctx, model: event.model } as ExtensionContext;
+    await refreshAndRender(selectedContext, false);
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
@@ -161,17 +178,29 @@ export function createPiCodexKimiUsage(
   });
 
   pi.registerCommand("quotas", {
-    description: "Toggle detailed Codex/Kimi quota widget",
-    handler: async (_args, ctx) => {
+    description: "Toggle details or set footer mode: minimal | full",
+    getArgumentCompletions: (prefix) => ["minimal", "full"]
+      .filter((value) => value.startsWith(prefix.trim()))
+      .map((value) => ({ value, label: value })),
+    handler: async (args, ctx) => {
+      const argument = args.trim();
+      if (argument === "minimal" || argument === "full") {
+        footerMode = argument;
+        updateFooter(ctx);
+        await saveFooterMode(footerMode, preferenceFile);
+        return;
+      }
+      if (argument) {
+        ctx.ui.notify("Usage: /quotas [minimal|full]", "warning");
+        return;
+      }
       if (ctx.mode !== "tui") {
         ctx.ui.notify("/quotas requires TUI mode", "warning");
         return;
       }
       widgetVisible = !widgetVisible;
-      if (widgetVisible) {
-        await coordinator.refreshAll(true);
-      }
-      updateFooter(ctx.ui);
+      if (widgetVisible) await coordinator.refreshAll(true);
+      updateFooter(ctx);
       updateWidget(ctx.ui);
     },
   });

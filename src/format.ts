@@ -1,3 +1,4 @@
+import type { FooterMode } from "./preferences.js";
 import type { ProviderName, ProviderQuota, QuotaSnapshot, QuotaWindow } from "./types.js";
 
 interface ThemeLike {
@@ -9,19 +10,10 @@ const PROVIDER_LABEL: Record<ProviderName, string> = {
   kimi: "Kimi",
 };
 
-const PROVIDER_CODE: Record<ProviderName, string> = {
-  codex: "CX",
-  kimi: "KM",
-};
-
 function thresholdColor(percent: number): "success" | "warning" | "error" {
   if (percent >= 90) return "error";
   if (percent >= 70) return "warning";
   return "success";
-}
-
-function maxUsedPercent(windows: QuotaWindow[]): number {
-  return windows.reduce((max, w) => Math.max(max, w.usedPercent), 0);
 }
 
 function shortWindowLabel(kind: QuotaWindow["kind"]): string {
@@ -55,30 +47,37 @@ function formatUpdatedTime(fetchedAt?: number): string {
   return `${hours}:${minutes}`;
 }
 
-export function formatProviderSegment(quota: ProviderQuota): string {
-  const code = PROVIDER_CODE[quota.provider];
-  if (quota.state === "missing") return `${code} —`;
-  if (quota.state === "error") return `${code} !`;
-  const staleMarker = quota.state === "stale" ? "~" : "";
-  const parts = quota.windows.map((w) => `${shortWindowLabel(w.kind)} ${Math.round(w.usedPercent)}%`);
-  return `${code}${staleMarker} ${parts.join(" · ")}`;
+export function formatGauge(percent: number): string {
+  const filled = percent <= 0 ? 0 : Math.min(4, Math.ceil(percent / 25));
+  return "▰".repeat(filled) + "▱".repeat(4 - filled);
 }
 
-export function formatFooter(snapshot: QuotaSnapshot, theme: ThemeLike): string {
-  const segments = [formatProviderSegment(snapshot.codex), formatProviderSegment(snapshot.kimi)];
-  const codexPercent = snapshot.codex.windows.length > 0 ? maxUsedPercent(snapshot.codex.windows) : 0;
-  const kimiPercent = snapshot.kimi.windows.length > 0 ? maxUsedPercent(snapshot.kimi.windows) : 0;
-  const overallPercent = Math.max(codexPercent, kimiPercent);
-  const colored = segments.map((segment, index) => {
-    const q = index === 0 ? snapshot.codex : snapshot.kimi;
-    if (q.state === "missing" || q.state === "error") return theme.fg("dim", segment);
-    const providerPercent = maxUsedPercent(q.windows);
-    const color = thresholdColor(providerPercent);
-    return theme.fg(color, segment);
-  });
-  // Use the overall threshold for the separator so the footer reads as a single quota block.
-  const separator = theme.fg(thresholdColor(overallPercent), " | ");
-  return colored.join(separator);
+export function formatResetTime(resetsAt: number, weekly: boolean): string {
+  const date = new Date(resetsAt);
+  const time = `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return weekly ? `${date.toLocaleDateString("en-US", { weekday: "short" })} ${time}` : time;
+}
+
+function formatFooterWindow(window: QuotaWindow, label: boolean, stale: boolean, theme: ThemeLike): string {
+  const percent = `${window.usedPercent}%${stale ? "~" : ""}`;
+  const reset = window.resetsAt
+    ? `  ↻${label ? " " : "  "}${formatResetTime(window.resetsAt, window.kind === "weekly")}`
+    : "";
+  const prefix = label ? `${shortWindowLabel(window.kind)}  ` : "";
+  return `${theme.fg("dim", `${prefix}${formatGauge(window.usedPercent)}  `)}${theme.fg(thresholdColor(window.usedPercent), percent)}${theme.fg("dim", reset)}`;
+}
+
+export function formatFooter(quota: ProviderQuota, mode: FooterMode, theme: ThemeLike): string {
+  if (quota.state === "missing") return theme.fg("dim", "—");
+  if (quota.state === "error") return theme.fg("dim", "!");
+  const fiveHour = quota.windows.find((window) => window.kind === "five-hour");
+  if (!fiveHour) return theme.fg("dim", "—");
+  const stale = quota.state === "stale";
+  const fiveHourText = formatFooterWindow(fiveHour, mode === "full", stale, theme);
+  if (mode === "minimal") return fiveHourText;
+  const weekly = quota.windows.find((window) => window.kind === "weekly");
+  if (!weekly) return fiveHourText;
+  return `${fiveHourText}${theme.fg("dim", "   ·   ")}${formatFooterWindow(weekly, true, stale, theme)}`;
 }
 
 export function formatWidget(snapshot: QuotaSnapshot, theme: ThemeLike, nowMs: number): string[] {
