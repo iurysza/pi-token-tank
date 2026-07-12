@@ -83,6 +83,7 @@ export function formatWidget(
 ): string[] {
   const lines: string[] = [];
   lines.push(theme.fg("accent", "Quota usage"));
+  lines.push(theme.fg("dim", "Footer size: /token-tank minimal · /token-tank full"));
   lines.push("");
 
   for (const provider of registry) {
@@ -120,7 +121,6 @@ export function formatWidget(
 
   const updated = formatUpdatedTime(registry.map((provider) => snapshot[provider.id]?.fetchedAt).find(Boolean));
   lines.push(theme.fg("dim", `Updated ${updated}`));
-  lines.push(theme.fg("dim", "Footer size: /token-tank minimal · /token-tank full"));
   lines.push(theme.fg("dim", "Run /token-tank again to hide."));
 
   return lines;
