@@ -84,26 +84,6 @@ Current data sources:
 
 These are provider-controlled surfaces and may change.
 
-## Adding a provider
-
-Providers implement the exported `QuotaProvider` contract and are registered in [`src/providers.ts`](src/providers.ts):
-
-```ts
-const provider: QuotaProvider = {
-  id: "provider-id",
-  label: "Provider",
-  matchesModel: (model) => model?.provider === "provider-id",
-  fetch: fetchProviderQuota,
-  credentialsHint: "Run /login provider-id.",
-  footerWindows: {
-    minimal: ["five-hour"],
-    full: ["five-hour", "weekly"],
-  },
-};
-```
-
-The fetcher normalizes the provider response into `ProviderQuota` and labeled `QuotaWindow` values. Registration automatically supplies model routing, independent caching, in-flight deduplication, stale-data fallback, footer rendering, and `/quotas` details. New window types such as monthly limits need no formatter changes.
-
 ## Development
 
 ```sh
