@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { formatFooter, formatGauge, formatResetTime, formatWidget } from "../src/format.js";
+import { providers } from "../src/providers.js";
 import type { ProviderQuota, QuotaSnapshot } from "../src/types.js";
 
 const theme = { fg: (color: string, text: string) => `[${color}:${text}]` };
@@ -11,8 +12,8 @@ function liveQuota(provider: ProviderQuota["provider"], five: number, weekly: nu
     provider, state: "live", fetchedAt: 1752306000000,
     plan: provider === "codex" ? "plus" : "Allegro",
     windows: [
-      { kind: "five-hour", usedPercent: five, resetsAt: new Date(2025, 6, 12, 3, 25).getTime() },
-      { kind: "weekly", usedPercent: weekly, resetsAt: new Date(2025, 6, 13, 9, 0).getTime() },
+      { id: "five-hour", shortLabel: "5h", longLabel: "5h", resetStyle: "time", usedPercent: five, resetsAt: new Date(2025, 6, 12, 3, 25).getTime() },
+      { id: "weekly", shortLabel: "7d", longLabel: "Weekly", resetStyle: "weekday-time", usedPercent: weekly, resetsAt: new Date(2025, 6, 13, 9, 0).getTime() },
     ],
   };
 }
@@ -55,7 +56,7 @@ describe("footer gauges", () => {
 describe("formatWidget", () => {
   it("retains both provider details", () => {
     const snapshot: QuotaSnapshot = { codex: liveQuota("codex", 24, 61), kimi: liveQuota("kimi", 18, 43) };
-    const text = formatWidget(snapshot, theme, 1752306000000).join("\n");
+    const text = formatWidget(snapshot, providers, theme, 1752306000000).join("\n");
     assert.ok(text.includes("Codex"));
     assert.ok(text.includes("Kimi"));
     assert.ok(text.includes("24% used"));

@@ -1,24 +1,39 @@
-export type ProviderName = "codex" | "kimi";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AuthStorageLike } from "./auth.js";
+
+export type ProviderId = string;
 export type QuotaState = "live" | "stale" | "missing" | "error";
 
 export interface QuotaWindow {
-  kind: "five-hour" | "weekly";
+  id: string;
+  shortLabel: string;
+  longLabel: string;
+  resetStyle: "time" | "weekday-time";
   usedPercent: number;
   used?: number;
   limit?: number;
-  resetsAt?: number; // Unix milliseconds
+  resetsAt?: number;
 }
 
 export interface ProviderQuota {
-  provider: ProviderName;
+  provider: ProviderId;
   state: QuotaState;
   fetchedAt?: number;
   plan?: string;
   windows: QuotaWindow[];
-  error?: string; // sanitized, user-facing only
+  error?: string;
 }
 
-export interface QuotaSnapshot {
-  codex: ProviderQuota;
-  kimi: ProviderQuota;
+export type QuotaSnapshot = Record<ProviderId, ProviderQuota>;
+
+export interface QuotaProvider {
+  id: ProviderId;
+  label: string;
+  matchesModel(model: ExtensionContext["model"]): boolean;
+  fetch(storage: AuthStorageLike): Promise<ProviderQuota>;
+  credentialsHint: string;
+  footerWindows: {
+    minimal: string[];
+    full: string[];
+  };
 }

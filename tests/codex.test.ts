@@ -44,9 +44,9 @@ describe("fetchCodexQuota", () => {
       assert.equal(quota.state, "live");
       assert.equal(quota.plan, "plus");
       assert.equal(quota.windows.length, 2);
-      assert.equal(quota.windows[0]?.kind, "five-hour");
+      assert.equal(quota.windows[0]?.id, "five-hour");
       assert.equal(quota.windows[0]?.usedPercent, 24);
-      assert.equal(quota.windows[1]?.kind, "weekly");
+      assert.equal(quota.windows[1]?.id, "weekly");
       assert.equal(quota.windows[1]?.usedPercent, 61);
     } finally {
       restore();

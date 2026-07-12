@@ -62,7 +62,10 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-function parseUsageRow(value: unknown, kind: QuotaWindow["kind"]): QuotaWindow | undefined {
+function parseUsageRow(
+  value: unknown,
+  window: Pick<QuotaWindow, "id" | "shortLabel" | "longLabel" | "resetStyle">,
+): QuotaWindow | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   const limit = toNumber(record.limit);
@@ -75,7 +78,7 @@ function parseUsageRow(value: unknown, kind: QuotaWindow["kind"]): QuotaWindow |
     resetsAt = parseDate(record[key]);
     if (resetsAt !== undefined) break;
   }
-  return { kind, usedPercent, used, limit, resetsAt };
+  return { ...window, usedPercent, used, limit, resetsAt };
 }
 
 function parseMembership(record: Record<string, unknown>): string | undefined {
@@ -93,7 +96,9 @@ function parseKimiBody(body: unknown): Omit<ProviderQuota, "provider" | "state" 
     throw new Error("Invalid Kimi usage response: expected object");
   }
   const record = body as Record<string, unknown>;
-  const weekly = parseUsageRow(record.usage, "weekly");
+  const weekly = parseUsageRow(record.usage, {
+    id: "weekly", shortLabel: "7d", longLabel: "Weekly", resetStyle: "weekday-time",
+  });
   if (!weekly) {
     throw new Error("Invalid Kimi usage response: missing weekly usage");
   }
@@ -122,7 +127,9 @@ function parseKimiBody(body: unknown): Omit<ProviderQuota, "provider" | "state" 
       if (duration === undefined) continue;
       const minutes = unit.includes("HOUR") ? duration * 60 : unit.includes("MINUTE") ? duration : undefined;
       if (minutes === 300) {
-        const row = parseUsageRow(detail, "five-hour");
+        const row = parseUsageRow(detail, {
+          id: "five-hour", shortLabel: "5h", longLabel: "5h", resetStyle: "time",
+        });
         if (row) {
           fiveHour = row;
           break;

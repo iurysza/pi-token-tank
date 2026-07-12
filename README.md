@@ -41,6 +41,16 @@ Footer mode defaults to `minimal` and is stored globally in `pi-codex-kimi-usage
 
 Quota refreshes on session start and after each turn or model switch when its cache is older than five minutes. Model switches immediately route the footer to the selected provider. Opening bare `/quotas` forces both providers to refresh.
 
+## Adding providers
+
+Providers are registered in `src/providers.ts` through the exported `QuotaProvider` contract. An adapter supplies its ID and label, active-model matcher, quota fetcher, credential hint, and the window IDs used by minimal/full footer modes. The coordinator, cache, stale-data handling, model routing, and `/quotas` widget derive from that registry.
+
+Provider fetchers normalize API responses into labeled `QuotaWindow` values, so new window types such as monthly limits require no formatter changes.
+
+### OpenCode Go
+
+OpenCode Go support is waiting for an official API-key-authenticated usage endpoint. The proposed `/zen/go/v1/usage` endpoint is not merged upstream; current alternatives require scraping console HTML with an expiring browser cookie. Once the official endpoint ships, Go can be added as one adapter with 5-hour, weekly, and monthly windows.
+
 ## Privacy and security
 
 - Only direct read-only quota endpoints are used.

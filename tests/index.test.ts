@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { createPiCodexKimiUsage, providerForModel } from "../src/index.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AuthStorageLike } from "../src/auth.js";
+import type { QuotaProvider } from "../src/types.js";
 import codexUsage from "./fixtures/codex-usage.json" with { type: "json" };
 import kimiUsage from "./fixtures/kimi-usage.json" with { type: "json" };
 
@@ -83,6 +84,27 @@ describe("createPiCodexKimiUsage", () => {
     assert.equal(providerForModel({ provider: "openai-codex", id: "gpt" } as ExtensionContext["model"]), "codex");
     assert.equal(providerForModel({ provider: "kimi-coding", id: "kimi" } as ExtensionContext["model"]), "kimi");
     assert.equal(providerForModel({ provider: "anthropic", id: "claude" } as ExtensionContext["model"]), undefined);
+  });
+
+  it("routes and renders an injected provider adapter", async () => {
+    const future: QuotaProvider = {
+      id: "future",
+      label: "Future",
+      matchesModel: (model) => model?.provider === "future",
+      fetch: async () => ({
+        provider: "future", state: "live", fetchedAt: Date.now(),
+        windows: [{
+          id: "monthly", shortLabel: "30d", longLabel: "Monthly",
+          resetStyle: "weekday-time", usedPercent: 42,
+        }],
+      }),
+      credentialsHint: "Configure Future.",
+      footerWindows: { minimal: ["monthly"], full: ["monthly"] },
+    };
+    const f = fakeAPI("future");
+    createPiCodexKimiUsage(f.api, fakeStorage(), undefined, [future]);
+    await f.fire("session_start", {});
+    assert.ok(f.status["pi-codex-kimi-usage"]?.includes("42%"));
   });
 
   it("registers /quotas and not /usage", () => {

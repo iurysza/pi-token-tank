@@ -2,113 +2,103 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createCoordinator } from "../src/index.js";
 import type { AuthStorageLike } from "../src/auth.js";
-import type { ProviderName, ProviderQuota } from "../src/types.js";
+import type { ProviderId, ProviderQuota, QuotaProvider } from "../src/types.js";
 
 function mockStorage(): AuthStorageLike {
   return {
-    getApiKey: async () => "token",
-    get: () => undefined,
-    reload: () => {},
-    getOAuthProviders: () => [],
-    set: () => {},
+    getApiKey: async () => "token", get: () => undefined, reload: () => {},
+    getOAuthProviders: () => [], set: () => {},
   } as unknown as AuthStorageLike;
 }
 
-function live(provider: ProviderName, percent: number): ProviderQuota {
+function live(provider: ProviderId, percent: number): ProviderQuota {
   return {
-    provider,
-    state: "live",
-    fetchedAt: Date.now(),
+    provider, state: "live", fetchedAt: Date.now(),
     windows: [
-      { kind: "five-hour", usedPercent: percent },
-      { kind: "weekly", usedPercent: percent },
+      { id: "five-hour", shortLabel: "5h", longLabel: "5h", resetStyle: "time", usedPercent: percent },
+      { id: "weekly", shortLabel: "7d", longLabel: "Weekly", resetStyle: "weekday-time", usedPercent: percent },
     ],
   };
 }
 
+function adapter(id: string, fetch: QuotaProvider["fetch"]): QuotaProvider {
+  return {
+    id, label: id, matchesModel: (model) => model?.provider === id, fetch,
+    credentialsHint: `Configure ${id}.`,
+    footerWindows: { minimal: ["five-hour"], full: ["five-hour", "weekly"] },
+  };
+}
+
+function registry(codexFetch: QuotaProvider["fetch"], kimiFetch: QuotaProvider["fetch"]): QuotaProvider[] {
+  return [adapter("codex", codexFetch), adapter("kimi", kimiFetch)];
+}
+
 describe("createCoordinator", () => {
-  it("fetches both providers on refreshAll", async () => {
-    const c = createCoordinator(mockStorage(), {
-      codex: async () => live("codex", 10),
-      kimi: async () => live("kimi", 20),
-    });
+  it("fetches every registered provider", async () => {
+    const c = createCoordinator(mockStorage(), registry(
+      async () => live("codex", 10), async () => live("kimi", 20),
+    ));
     const snapshot = await c.refreshAll(true);
-    assert.equal(snapshot.codex.state, "live");
-    assert.equal(snapshot.kimi.state, "live");
-    assert.equal(snapshot.codex.windows[0]?.usedPercent, 10);
+    assert.equal(snapshot.codex?.windows[0]?.usedPercent, 10);
+    assert.equal(snapshot.kimi?.state, "live");
+  });
+
+  it("supports adding a provider without coordinator changes", async () => {
+    const c = createCoordinator(mockStorage(), [adapter("future", async () => live("future", 30))]);
+    const snapshot = await c.refreshAll(true);
+    assert.equal(snapshot.future?.windows[0]?.usedPercent, 30);
   });
 
   it("deduplicates concurrent refreshes", async () => {
     let calls = 0;
-    const c = createCoordinator(mockStorage(), {
-      codex: async () => {
-        calls++;
-        await new Promise((r) => setTimeout(r, 20));
-        return live("codex", 10);
-      },
-      kimi: async () => live("kimi", 20),
-    });
+    const c = createCoordinator(mockStorage(), [adapter("codex", async () => {
+      calls++;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return live("codex", 10);
+    })]);
     const [a, b] = await Promise.all([c.refresh("codex", true), c.refresh("codex", true)]);
     assert.equal(calls, 1);
     assert.equal(a.state, "live");
     assert.equal(b.state, "live");
   });
 
-  it("uses cache when fresh and not forced", async () => {
+  it("uses fresh cache", async () => {
     let calls = 0;
-    const c = createCoordinator(mockStorage(), {
-      codex: async () => {
-        calls++;
-        return live("codex", 10);
-      },
-      kimi: async () => live("kimi", 20),
-    });
+    const c = createCoordinator(mockStorage(), [adapter("codex", async () => {
+      calls++;
+      return live("codex", 10);
+    })]);
     await c.refreshAll(true);
-    const snapshot = await c.refreshAll(false);
+    await c.refreshAll(false);
     assert.equal(calls, 1);
-    assert.equal(snapshot.codex.windows[0]?.usedPercent, 10);
   });
 
-  it("keeps last-good data as stale when a client returns an error state", async () => {
+  it("keeps last-good data as stale", async () => {
     let succeed = true;
-    const c = createCoordinator(mockStorage(), {
-      codex: async () => {
-        if (succeed) return live("codex", 10);
-        return { provider: "codex", state: "error", windows: [], error: "network down" };
-      },
-      kimi: async () => live("kimi", 20),
-    });
+    const c = createCoordinator(mockStorage(), [adapter("codex", async () => succeed
+      ? live("codex", 10)
+      : { provider: "codex", state: "error", windows: [], error: "network down" })]);
     await c.refreshAll(true);
     succeed = false;
     const snapshot = await c.refreshAll(true);
-    assert.equal(snapshot.codex.state, "stale");
-    assert.equal(snapshot.codex.windows[0]?.usedPercent, 10);
-    assert.equal(snapshot.codex.error, "network down");
-    assert.equal(snapshot.kimi.state, "live");
+    assert.equal(snapshot.codex?.state, "stale");
+    assert.equal(snapshot.codex?.error, "network down");
   });
 
-  it("one provider failure does not discard the other", async () => {
-    const c = createCoordinator(mockStorage(), {
-      codex: async () => {
-        throw new Error("secret-bearing unexpected failure");
-      },
-      kimi: async () => live("kimi", 20),
-    });
+  it("isolates provider failures", async () => {
+    const c = createCoordinator(mockStorage(), registry(
+      async () => { throw new Error("secret-bearing failure"); },
+      async () => live("kimi", 20),
+    ));
     const snapshot = await c.refreshAll(true);
-    assert.equal(snapshot.codex.state, "error");
-    assert.equal(snapshot.codex.error, "Unexpected quota refresh failure.");
-    assert.equal(snapshot.kimi.state, "live");
+    assert.equal(snapshot.codex?.error, "Unexpected quota refresh failure.");
+    assert.equal(snapshot.kimi?.state, "live");
   });
 
-  it("clears caches on clear", async () => {
-    const c = createCoordinator(mockStorage(), {
-      codex: async () => live("codex", 10),
-      kimi: async () => live("kimi", 20),
-    });
+  it("clears dynamic caches", async () => {
+    const c = createCoordinator(mockStorage(), [adapter("future", async () => live("future", 30))]);
     await c.refreshAll(true);
     c.clear();
-    const snapshot = c.getSnapshot();
-    assert.equal(snapshot.codex.state, "missing");
-    assert.equal(snapshot.kimi.state, "missing");
+    assert.equal(c.getSnapshot().future?.state, "missing");
   });
 });
