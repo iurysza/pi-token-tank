@@ -81,48 +81,35 @@ export function formatWidget(
   theme: ThemeLike,
   nowMs: number,
 ): string[] {
-  const lines: string[] = [];
-  lines.push(theme.fg("accent", "Quota usage"));
-  lines.push(theme.fg("dim", "Footer size: /token-tank minimal · /token-tank full"));
-  lines.push("");
+  const lines = [
+    `${theme.fg("accent", "Quota usage")}${theme.fg("dim", " · footer /token-tank minimal|full")}`,
+  ];
 
   for (const provider of registry) {
     const q = snapshot[provider.id];
     if (!q) continue;
-    const label = provider.label;
-    const plan = q.plan ?? "—";
-    const state = q.state;
-    lines.push(
-      `${theme.fg("accent", label)}${theme.fg("dim", ` · ${plan} · ${state}`)}`,
-    );
+    const prefix = `${theme.fg("accent", provider.label)}${theme.fg("dim", ` · ${q.plan ?? "—"} · ${q.state}`)}`;
 
     if (q.state === "missing") {
-      lines.push(theme.fg("dim", `  Credentials missing. ${provider.credentialsHint}`));
-    } else if (q.state === "error" && q.error) {
-      lines.push(theme.fg("error", `  ${q.error}`));
-    } else {
-      for (const w of q.windows) {
-        const labelText = w.longLabel.padEnd(7);
-        const percentText = `${Math.round(w.usedPercent)}% used`;
-        const resetText = w.resetsAt ? `resets ${formatResetDuration(w.resetsAt - nowMs)}` : "";
-        const color = thresholdColor(w.usedPercent);
-        const parts = [`  ${labelText}`, theme.fg(color, percentText)];
-        if (resetText) parts.push(theme.fg("dim", resetText));
-        lines.push(parts.join("   "));
-      }
+      lines.push(`${prefix}${theme.fg("dim", ` · Credentials missing. ${provider.credentialsHint}`)}`);
+      continue;
+    }
+    if (q.state === "error") {
+      lines.push(`${prefix}${theme.fg("error", ` · ${q.error ?? "Quota unavailable."}`)}`);
+      continue;
     }
 
-    if (q.error && q.state === "stale") {
-      lines.push(theme.fg("warning", `  ${q.error}`));
-    }
-
-    lines.push("");
+    const windows = q.windows.map((window) => {
+      const reset = window.resetsAt ? ` ↻ ${formatResetDuration(window.resetsAt - nowMs)}` : "";
+      return `${window.longLabel} ${theme.fg(thresholdColor(window.usedPercent), `${Math.round(window.usedPercent)}% used`)}${theme.fg("dim", reset)}`;
+    });
+    const details = windows.length > 0 ? windows.join(theme.fg("dim", " · ")) : theme.fg("dim", "No quota windows");
+    const staleError = q.error && q.state === "stale" ? theme.fg("warning", ` · ${q.error}`) : "";
+    lines.push(`${prefix}${theme.fg("dim", " · ")}${details}${staleError}`);
   }
 
   const updated = formatUpdatedTime(registry.map((provider) => snapshot[provider.id]?.fetchedAt).find(Boolean));
-  lines.push(theme.fg("dim", `Updated ${updated}`));
-  lines.push(theme.fg("dim", "Run /token-tank again to hide."));
-
+  lines.push(theme.fg("dim", `Updated ${updated} · /token-tank hides`));
   return lines;
 }
 

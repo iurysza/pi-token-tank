@@ -2,6 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 import { createCredentialSource, type CredentialSourceLike } from "./auth.js";
 import { captureCursorSessionToken, fetchCursorQuotaWithToken } from "./cursor.js";
@@ -92,9 +93,9 @@ export function createCoordinator(
   return { refresh, refreshAll, getSnapshot, clear };
 }
 
-function makeThemeLike(ctx: ExtensionContext["ui"]) {
+function makeThemeLike(theme: ExtensionContext["ui"]["theme"]) {
   return {
-    fg: (color: Parameters<typeof ctx.theme.fg>[0], text: string) => ctx.theme.fg(color, text),
+    fg: (color: Parameters<typeof theme.fg>[0], text: string) => theme.fg(color, text),
   };
 }
 
@@ -159,7 +160,7 @@ export function createTokenTank(
     const quota = activeCoordinator.getSnapshot()[provider.id];
     ctx.ui.setStatus(
       STATUS_KEY,
-      formatFooter(quota, footerMode, makeThemeLike(ctx.ui), provider.footerWindows[footerMode]),
+      formatFooter(quota, footerMode, makeThemeLike(ctx.ui.theme), provider.footerWindows[footerMode]),
     );
   }
 
@@ -169,10 +170,15 @@ export function createTokenTank(
       return;
     }
     const activeCoordinator = getCoordinator(ctx);
-    ctx.ui.setWidget(
-      WIDGET_KEY,
-      formatWidget(activeCoordinator.getSnapshot(), runtimeRegistry, makeThemeLike(ctx.ui), Date.now()),
-    );
+    const snapshot = activeCoordinator.getSnapshot();
+    const widgetRegistry = runtimeRegistry;
+    ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => ({
+      render(width: number) {
+        return formatWidget(snapshot, widgetRegistry, makeThemeLike(theme), Date.now())
+          .map((line) => truncateToWidth(line, Math.max(1, width), "…"));
+      },
+      invalidate() {},
+    }));
   }
 
   async function refreshAndRender(ctx: ExtensionContext, force: boolean) {

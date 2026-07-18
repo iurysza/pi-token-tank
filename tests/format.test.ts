@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { formatFooter, formatGauge, formatResetTime, formatWidget } from "../src/format.js";
-import { providers } from "../src/providers.js";
+import { createCursorProvider, providers } from "../src/providers.js";
 import type { ProviderQuota, QuotaSnapshot } from "../src/types.js";
 
 const theme = { fg: (color: string, text: string) => `[${color}:${text}]` };
@@ -79,13 +79,23 @@ describe("footer gauges", () => {
 });
 
 describe("formatWidget", () => {
-  it("retains both provider details", () => {
-    const snapshot: QuotaSnapshot = { codex: liveQuota("codex", 24, 61), kimi: liveQuota("kimi", 18, 43) };
-    const text = formatWidget(snapshot, providers, theme, 1752306000000).join("\n");
+  it("keeps every provider to one line below Pi's widget cap", () => {
+    const registry = [...providers, createCursorProvider()];
+    const snapshot: QuotaSnapshot = {
+      codex: liveQuota("codex", 24, 61),
+      kimi: liveQuota("kimi", 18, 43),
+      copilot: { provider: "copilot", state: "missing", windows: [] },
+      cursor: { provider: "cursor", state: "missing", windows: [] },
+    };
+    const lines = formatWidget(snapshot, registry, theme, 1752306000000);
+    const text = lines.join("\n");
+    assert.equal(lines.length, 6);
     assert.ok(text.includes("Codex"));
     assert.ok(text.includes("Kimi"));
+    assert.ok(text.includes("GitHub Copilot"));
+    assert.ok(text.includes("Cursor"));
     assert.ok(text.includes("24% used"));
-    assert.ok(text.includes("Footer size: /token-tank minimal · /token-tank full"));
-    assert.ok(text.includes("Run /token-tank again to hide."));
+    assert.ok(text.includes("/token-tank minimal|full"));
+    assert.ok(text.includes("/token-tank hides"));
   });
 });

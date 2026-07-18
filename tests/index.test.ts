@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createTokenTank, providerForModel } from "../src/index.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import type { CredentialSourceLike } from "../src/auth.js";
 import type { QuotaProvider } from "../src/types.js";
 import codexUsage from "./fixtures/codex-usage.json" with { type: "json" };
@@ -36,6 +37,8 @@ function fakeAPI(provider = "openai-codex", registeredProviderIds: string[] = []
   const handlers: Record<string, ((event: unknown, ctx: unknown) => Promise<unknown>)[]> = {};
   const status: Record<string, string | undefined> = {};
   const widgets: Record<string, string[] | undefined> = {};
+  const widgetKinds: Record<string, "lines" | "component" | undefined> = {};
+  const widgetRenderers: Record<string, ((width: number) => string[]) | undefined> = {};
   const commands: Record<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> }> = {};
 
   const ctx: ExtensionContext = {
@@ -48,8 +51,23 @@ function fakeAPI(provider = "openai-codex", registeredProviderIds: string[] = []
       setStatus: (key: string, text: string | undefined) => {
         status[key] = text;
       },
-      setWidget: (key: string, content: string[] | undefined) => {
-        widgets[key] = content;
+      setWidget: (key: string, content: unknown) => {
+        if (typeof content === "function") {
+          widgetKinds[key] = "component";
+          const component = (content as (
+            tui: unknown,
+            theme: { fg: (color: string, text: string) => string },
+          ) => { render: (width: number) => string[] })(
+            {},
+            { fg: (_color: string, text: string) => text },
+          );
+          widgetRenderers[key] = component.render;
+          widgets[key] = component.render(96);
+        } else {
+          widgetKinds[key] = content === undefined ? undefined : "lines";
+          widgetRenderers[key] = undefined;
+          widgets[key] = content as string[] | undefined;
+        }
       },
       theme: {
         fg: (_color: string, text: string) => text,
@@ -70,6 +88,8 @@ function fakeAPI(provider = "openai-codex", registeredProviderIds: string[] = []
     handlers,
     status,
     widgets,
+    widgetKinds,
+    widgetRenderers,
     commands,
     ctx,
     async fire(event: string, payload: unknown) {
@@ -380,7 +400,10 @@ describe("createTokenTank", () => {
       assert.ok(widget.includes("GitHub Copilot"));
       assert.ok(widget.includes("Monthly"));
       assert.ok(widget.includes("25% used"));
-      assert.ok(f.widgets["pi-token-tank"]?.includes("Run /token-tank again to hide."));
+      assert.equal(f.widgetKinds["pi-token-tank"], "component");
+      assert.ok((f.widgets["pi-token-tank"]?.length ?? Infinity) <= 5);
+      assert.ok(f.widgets["pi-token-tank"]?.some((line) => line.includes("/token-tank hides")));
+      assert.ok(f.widgetRenderers["pi-token-tank"]?.(32).every((line) => visibleWidth(line) <= 32));
       await f.commands["token-tank"]!.handler("", f.ctx);
       assert.equal(f.widgets["pi-token-tank"], undefined);
     } finally {

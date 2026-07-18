@@ -80,7 +80,7 @@ Full mode adds the configured detail windows:
 | `/token-tank minimal` | Use the compact footer with the primary quota window |
 | `/token-tank full` | Use the bigger footer with every configured quota window |
 
-The details panel also reminds you about `minimal` and `full`, so the larger view is easy to discover.
+The details widget keeps every configured provider on one width-aware line, including all available quota windows, so it stays below Pi's 10-line widget cap instead of dropping later providers. It also reminds you about `minimal` and `full`.
 
 The selected mode is stored in `pi-token-tank.json` under Pi’s agent directory. The file contains only `{ "footerMode": "minimal" | "full" }`—never credentials or quota data.
 
