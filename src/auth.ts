@@ -144,6 +144,42 @@ export async function getCodexAuth(
   return { token, accountId };
 }
 
+export type GitHubCopilotAuthResult =
+  | { authenticated: true }
+  | { error: string };
+
+function isGitHubDotCom(value: string): boolean {
+  try {
+    const trimmed = value.trim();
+    const url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+    return url.hostname.toLowerCase() === "github.com";
+  } catch {
+    return false;
+  }
+}
+
+export async function withGitHubCopilotAuth(
+  credentials: CredentialSourceLike,
+  fetchQuota: (token: string) => Promise<void>,
+): Promise<GitHubCopilotAuthResult> {
+  const credential = toOAuthLike(credentials.readCredential("github-copilot"));
+  if (
+    typeof credential?.enterpriseUrl === "string" &&
+    credential.enterpriseUrl.trim() &&
+    !isGitHubDotCom(credential.enterpriseUrl)
+  ) {
+    return { error: "GitHub Copilot quota supports GitHub.com only; custom enterprise domains are unsupported." };
+  }
+  const token = credential?.type === "oauth" && typeof credential.refresh === "string"
+    ? credential.refresh.trim()
+    : "";
+  if (!token) {
+    return { error: "GitHub Copilot credentials missing. Run /login github-copilot." };
+  }
+  await fetchQuota(token);
+  return { authenticated: true };
+}
+
 export type KimiCredentialType = "oauth" | "api_key";
 
 export type KimiAuthResult =

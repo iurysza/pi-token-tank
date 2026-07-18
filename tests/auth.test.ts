@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createCredentialSource, type ModelRegistryLike } from "../src/auth.js";
+import {
+  createCredentialSource,
+  type CredentialSourceLike,
+  type ModelRegistryLike,
+  withGitHubCopilotAuth,
+} from "../src/auth.js";
 
 function fakeRegistry(overrides: Partial<ModelRegistryLike> = {}): ModelRegistryLike {
   return {
@@ -10,6 +15,96 @@ function fakeRegistry(overrides: Partial<ModelRegistryLike> = {}): ModelRegistry
     ...overrides,
   };
 }
+
+describe("withGitHubCopilotAuth", () => {
+  it("uses the stored OAuth refresh token without mutating the credential", async () => {
+    const credential = {
+      type: "oauth",
+      access: "copilot-session-token",
+      refresh: "github-oauth-token",
+      expires: Date.now() + 60_000,
+    };
+    const before = structuredClone(credential);
+    const credentials = {
+      getApiKey: async () => undefined,
+      readCredential: (providerId: string) => {
+        assert.equal(providerId, "github-copilot");
+        return credential;
+      },
+      refreshOAuthToken: async () => null,
+    } satisfies CredentialSourceLike;
+
+    let receivedToken = "";
+    const result = await withGitHubCopilotAuth(credentials, async (token) => {
+      receivedToken = token;
+    });
+
+    assert.deepEqual(result, { authenticated: true });
+    assert.equal(receivedToken, "github-oauth-token");
+    assert.deepEqual(credential, before);
+  });
+
+  it("allows explicit GitHub.com enterprise URL forms", async () => {
+    for (const enterpriseUrl of ["github.com", "https://github.com/"]) {
+      let called = false;
+      const credentials = {
+        getApiKey: async () => undefined,
+        readCredential: () => ({
+          type: "oauth",
+          refresh: "github-oauth-token",
+          enterpriseUrl,
+        }),
+        refreshOAuthToken: async () => null,
+      } satisfies CredentialSourceLike;
+
+      const result = await withGitHubCopilotAuth(credentials, async () => { called = true; });
+
+      assert.deepEqual(result, { authenticated: true });
+      assert.equal(called, true);
+    }
+  });
+
+  it("rejects a custom enterprise domain before token use", async () => {
+    let called = false;
+    const credentials = {
+      getApiKey: async () => undefined,
+      readCredential: () => ({
+        type: "oauth",
+        refresh: "github-oauth-token",
+        enterpriseUrl: "github.example.test",
+      }),
+      refreshOAuthToken: async () => null,
+    } satisfies CredentialSourceLike;
+
+    const result = await withGitHubCopilotAuth(credentials, async () => { called = true; });
+
+    assert.deepEqual(result, {
+      error: "GitHub Copilot quota supports GitHub.com only; custom enterprise domains are unsupported.",
+    });
+    assert.equal(called, false);
+  });
+
+  it("rejects missing, API-key, and blank OAuth credentials safely", async () => {
+    for (const credential of [
+      undefined,
+      { type: "api_key", key: "secret-api-key" },
+      { type: "oauth", refresh: "   " },
+    ]) {
+      let called = false;
+      const credentials = {
+        getApiKey: async () => undefined,
+        readCredential: () => credential,
+        refreshOAuthToken: async () => null,
+      } satisfies CredentialSourceLike;
+      const result = await withGitHubCopilotAuth(credentials, async () => {
+        called = true;
+      });
+      assert.ok("error" in result);
+      assert.equal(called, false);
+      assert.ok(!("error" in result) || !result.error.includes("secret-api-key"));
+    }
+  });
+});
 
 describe("createCredentialSource", () => {
   it("resolves normal API keys through the model registry", async () => {

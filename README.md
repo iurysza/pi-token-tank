@@ -18,6 +18,7 @@ Provider-aware subscription quota status for Pi. It follows the active model and
 | --- | --- | --- | --- |
 | `openai`, `openai-codex` | OpenAI Codex | Pi `/login openai-codex` | 5 hour, weekly |
 | `kimi-coding` | Kimi Coding | Pi `/login kimi-coding` or `KIMI_API_KEY` | 5 hour, weekly |
+| `github-copilot` | GitHub Copilot | Pi `/login github-copilot` | Monthly AI credits/premium requests |
 
 Unsupported model providers produce no footer status.
 
@@ -32,6 +33,7 @@ Then authenticate the provider you use:
 ```text
 /login openai-codex
 /login kimi-coding
+/login github-copilot
 ```
 
 Reload Pi after installation.
@@ -75,6 +77,12 @@ The selected mode is stored in `pi-token-tank.json` under Pi’s agent directory
 - Opening `/token-tank` forces all registered providers to refresh independently.
 - Keeps last-good data and marks it stale if a later request fails.
 - Shows `—` when credentials are missing and `!` when a request fails without cached data.
+
+## Provider API notes
+
+GitHub Copilot quota uses the read-only, undocumented `https://api.github.com/copilot_internal/user` endpoint. It supports GitHub.com, including Enterprise Cloud seats hosted on GitHub.com; custom GitHub Enterprise Server domains are rejected before any request. Token Tank reads Pi's stored GitHub OAuth token only in memory for that request. Tokens and raw responses are never logged, cached, or persisted. Normalized quota uses the existing in-memory five-minute/stale cache and is never persisted. The endpoint may change without notice.
+
+Cursor is not supported. Pi has no core Cursor provider, and Cursor does not expose a safe official individual-plan quota API. Token Tank will not read browser sessions or scrape Cursor dashboards.
 
 ## Development
 

@@ -12,7 +12,8 @@
     "usage",
     "footer",
     "codex",
-    "kimi"
+    "kimi",
+    "copilot"
   ],
   "repository": {
     "type": "git",

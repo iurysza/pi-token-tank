@@ -8,6 +8,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { CredentialSourceLike } from "../src/auth.js";
 import type { QuotaProvider } from "../src/types.js";
 import codexUsage from "./fixtures/codex-usage.json" with { type: "json" };
+import copilotUsage from "./fixtures/copilot-usage.json" with { type: "json" };
 import kimiUsage from "./fixtures/kimi-usage.json" with { type: "json" };
 
 function fakeCredentials(): CredentialSourceLike {
@@ -81,6 +82,7 @@ describe("createTokenTank", () => {
     assert.equal(providerForModel({ provider: "openai", id: "gpt" } as ExtensionContext["model"]), "codex");
     assert.equal(providerForModel({ provider: "openai-codex", id: "gpt" } as ExtensionContext["model"]), "codex");
     assert.equal(providerForModel({ provider: "kimi-coding", id: "kimi" } as ExtensionContext["model"]), "kimi");
+    assert.equal(providerForModel({ provider: "github-copilot", id: "gpt" } as ExtensionContext["model"]), "copilot");
     assert.equal(providerForModel({ provider: "anthropic", id: "claude" } as ExtensionContext["model"]), undefined);
   });
 
@@ -135,7 +137,12 @@ describe("createTokenTank", () => {
   it("toggles the /token-tank widget", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = (async (url) => {
-      const body = String(url).includes("chatgpt.com") ? codexUsage : kimiUsage;
+      const value = String(url);
+      const body = value.includes("chatgpt.com")
+        ? codexUsage
+        : value.includes("api.github.com")
+          ? copilotUsage
+          : kimiUsage;
       return new Response(JSON.stringify(body), { status: 200 });
     }) as typeof fetch;
     try {
@@ -144,10 +151,16 @@ describe("createTokenTank", () => {
         ...fakeCredentials(),
         readCredential: (provider: string) => provider === "openai-codex"
           ? { type: "oauth", access: "token", accountId: "acc-1" }
-          : { type: "api_key", key: "token" },
+          : provider === "github-copilot"
+            ? { type: "oauth", access: "copilot-session-token", refresh: "github-oauth-token" }
+            : { type: "api_key", key: "token" },
       } as CredentialSourceLike;
       createTokenTank(f.api, credentials);
       await f.commands["token-tank"]!.handler("", f.ctx);
+      const widget = f.widgets["pi-token-tank"]?.join("\n") ?? "";
+      assert.ok(widget.includes("GitHub Copilot"));
+      assert.ok(widget.includes("Monthly"));
+      assert.ok(widget.includes("25% used"));
       assert.ok(f.widgets["pi-token-tank"]?.includes("Run /token-tank again to hide."));
       await f.commands["token-tank"]!.handler("", f.ctx);
       assert.equal(f.widgets["pi-token-tank"], undefined);
